@@ -25,6 +25,16 @@ cargo install espup esp-generate espflash --locked
 espup install --targets esp32       # Rust-тулчейн для Xtensa (архитектура ESP32)
 ```
 
+## Wi-Fi
+
+Имя сети и пароль в репо не хранятся. Один раз создай локальный файл и впиши свою сеть:
+
+```sh
+cp esp/.cargo/wifi.toml.example esp/.cargo/wifi.toml
+```
+
+Без него сборка прошивки падает с `failed to load config include wifi.toml`.
+
 ## Работа
 
 Всё через `make` из корня репо. Окружение тулчейна (`~/export-esp.sh`) Makefile подгружает сам.
