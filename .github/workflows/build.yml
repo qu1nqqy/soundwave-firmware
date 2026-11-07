@@ -125,3 +125,27 @@ jobs:
             --notes "Сборка коммита ${GITHUB_SHA}: $(git log -1 --pretty=%s)
 
           Прошивка: \`espflash write-bin 0x0 soundwave.bin\` (или \`espflash flash --monitor soundwave.elf\`)"
+
+  notify:
+    needs: [core, esp, release]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+    steps:
+      # без секретов (например, в форке) просто молчим, а не падаем
+      - name: Notify
+        if: env.TELEGRAM_TOKEN != '' && env.TELEGRAM_TO != ''
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: markdown
+          message: |
+            ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌ **Сборка упала**' || '✅ **Сборка прошла**' }}
+            Репозиторий: `${{ github.repository }}`
+            Ветка: `${{ github.ref_name }}`
+            Автор: `${{ github.actor }}`
+            core: `${{ needs.core.result }}` · esp: `${{ needs.esp.result }}` · release: `${{ needs.release.result }}`
+            🔗 [Workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
