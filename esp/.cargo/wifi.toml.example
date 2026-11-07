@@ -1,0 +1,8 @@
+# Сеть Wi-Fi, к которой подключается плата. Значения вшиваются в прошивку при сборке
+# и доступны в коде как env!("WIFI_SSID") и env!("WIFI_PASSWORD").
+#
+# Скопируй этот файл в wifi.toml (он в .gitignore, в репо не попадёт) и впиши свою сеть:
+#   cp esp/.cargo/wifi.toml.example esp/.cargo/wifi.toml
+[env]
+WIFI_SSID = "имя сети"
+WIFI_PASSWORD = "пароль"
