@@ -58,3 +58,6 @@ pub fn parse(packet: &[u8]) -> Result<Command, ParseError> {
     let _ = packet;
     todo!()
 }
+
+#[cfg(test)]
+mod tests;
