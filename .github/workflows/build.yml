@@ -61,6 +61,10 @@ jobs:
         with:
           workspaces: esp
 
+      # настоящая сеть CI не нужна — хватает заглушки, чтобы собрался env!()
+      - name: Dummy Wi-Fi config
+        run: cp esp/.cargo/wifi.toml.example esp/.cargo/wifi.toml
+
       - name: Check
         run: make esp-check
 
