@@ -5,3 +5,5 @@
 //! тестировать обычным `cargo test` без платы.
 
 #![cfg_attr(not(test), no_std)]
+
+pub mod effects;
