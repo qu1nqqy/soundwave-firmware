@@ -23,11 +23,14 @@ use esp_hal::rmt::Rmt;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal_smartled::{RmtSmartLeds, WS2812B_TIMING, buffer_size, color_order};
+use esp_radio::wifi::{AuthenticationMethodConfig, sta::StationConfig};
 use log::info;
 use smart_leds::{RGB8, SmartLedsWriteAsync, brightness, gamma};
 use soundwave_core::effects::rainbow;
 use soundwave_core::power::power_scale;
 use static_cell::StaticCell;
+
+mod wifi;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -64,7 +67,7 @@ static STRIP: StaticCell<Strip> = StaticCell::new();
     reason = "it's not unusual to allocate larger buffers etc. in main"
 )]
 #[esp_rtos::main]
-async fn main(_spawner: Spawner) -> ! {
+async fn main(spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -75,6 +78,19 @@ async fn main(_spawner: Spawner) -> ! {
     // Запускаем планировщик embassy на аппаратном таймере.
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
+
+    let mut controller = esp_radio::wifi::WifiController::new(peripherals.WIFI, Default::default())
+        .expect("wifi init");
+    let config = esp_radio::wifi::Config::Station(
+        StationConfig::default()
+            .with_ssid(env!("WIFI_SSID").try_into().expect("ssid"))
+            .with_authentication(AuthenticationMethodConfig::Wpa2Personal(
+                env!("WIFI_PASSWORD").try_into().expect("password"),
+            )),
+    );
+    controller.set_config(&config).expect("wifi config");
+
+    spawner.spawn(wifi::wifi_task(controller).unwrap());
 
     let rmt = Rmt::new(peripherals.RMT, RMT_FREQ)
         .expect("RMT init")
