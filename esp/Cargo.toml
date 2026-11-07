@@ -3,6 +3,7 @@ edition      = "2024"
 name         = "soundwave"
 rust-version = "1.95"
 version      = "0.1.0"
+autobins = false
 
 [[bin]]
 name = "soundwave"
