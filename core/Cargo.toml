@@ -1,0 +1,7 @@
+[package]
+edition = "2024"
+name    = "soundwave-core"
+version = "0.1.0"
+
+[dependencies]
+smart-leds = "0.4"
