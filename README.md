@@ -48,6 +48,20 @@ espflash monitor          # только монитор логов
 
 > Прошивка затрёт WLED. Вернуть его можно в любой момент через веб-установщик install.wled.me.
 
+## CI/CD
+
+`.github/workflows/build.yml`:
+
+- **каждый пуш в `main`/`dev` и PR в `main`:** `core` — fmt, clippy, тесты; `esp` — fmt, clippy, сборка.
+- **пуш в `main`:** ещё и релиз `build-<sha>` с файлами `soundwave.bin` и `soundwave.elf`.
+- **уведомление в Telegram** о результате, если в репо заданы секреты `TELEGRAM_TOKEN` и `TELEGRAM_TO`.
+
+Прошить готовый релиз без сборки:
+
+```sh
+espflash write-bin 0x0 soundwave.bin
+```
+
 ## Что где в `esp/`
 
 | Файл | Зачем |
