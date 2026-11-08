@@ -23,7 +23,7 @@ log                    = "0.4.27"
 
 embassy-executor = { version = "0.10.0", features = ["log"] }
 embassy-time = { version = "0.5.0", features = ["log"] }
-embassy-net = { version = "0.9.1", features = ["dhcpv4", "log", "medium-ethernet", "udp"] }
+embassy-net = { version = "0.9.1", features = ["dhcpv4", "log", "medium-ethernet", "udp", "auto-icmp-echo-reply"] }
 esp-backtrace = { version = "0.20.0", features = [
   "esp32",
   "panic-handler",
