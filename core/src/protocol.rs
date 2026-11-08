@@ -54,9 +54,22 @@ pub enum ParseError {
 /// Проверки идут по порядку: длина шапки → магия → версия → тип команды → длина данных.
 /// Первая же неудачная проверка и становится ошибкой.
 pub fn parse(packet: &[u8]) -> Result<Command, ParseError> {
-    // TODO(ты): реализуй разбор так, чтобы прошли тесты ниже (`make test`).
-    let _ = packet;
-    todo!()
+    if packet.len() < HEADER_LEN {
+        return Err(ParseError::TooShort);
+    }
+    if packet[0] != MAGIC {
+        return Err(ParseError::BadMagic);
+    }
+    if packet[1] != VERSION {
+        return Err(ParseError::UnsupportedVersion(packet[1]));
+    }
+    match packet[2] {
+        CMD_FILL => match &packet[HEADER_LEN..] {
+            &[r, g, b] => Ok(Command::Fill(RGB8::new(r, g, b))),
+            _ => Err(ParseError::BadLength),
+        },
+        other => Err(ParseError::UnknownCommand(other)),
+    }
 }
 
 #[cfg(test)]
