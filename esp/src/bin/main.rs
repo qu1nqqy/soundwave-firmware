@@ -15,6 +15,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
+use embassy_net::StackResources;
 use embassy_time::{Duration, Instant, Ticker};
 use esp_backtrace as _; // при панике печатает backtrace в консоль
 use esp_hal::Async;
@@ -23,7 +24,7 @@ use esp_hal::rmt::Rmt;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal_smartled::{RmtSmartLeds, WS2812B_TIMING, buffer_size, color_order};
-use esp_radio::wifi::{AuthenticationMethodConfig, sta::StationConfig};
+use esp_radio::wifi::{AuthenticationMethodConfig, Interface, sta::StationConfig};
 use log::info;
 use smart_leds::{RGB8, SmartLedsWriteAsync, brightness, gamma};
 use soundwave_core::effects::rainbow;
@@ -61,6 +62,10 @@ type Strip =
 /// он живёт в статической памяти и создаётся один раз при старте.
 static STRIP: StaticCell<Strip> = StaticCell::new();
 
+/// Память под внутренние структуры сетевого стека: по слоту на каждый сокет
+/// (DHCP, наш UDP и один про запас). Стек живёт до выключения платы,
+/// поэтому и она — в статической памяти, создаётся один раз при старте.
+static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
 // --- Точка входа -------------------------------------------------------------
 
 #[allow(
@@ -92,6 +97,17 @@ async fn main(spawner: Spawner) -> ! {
     controller.set_config(&config).expect("wifi config");
 
     spawner.spawn(wifi::wifi_task(controller).unwrap());
+
+    let interface = Interface::station();
+    let config = embassy_net::Config::dhcpv4(Default::default());
+    let resources = RESOURCES.init(StackResources::new());
+    let seed: u64 = u64::from(esp_hal::rng::Rng::new().random()) << 32
+        | u64::from(esp_hal::rng::Rng::new().random());
+    let (stack, runner) = embassy_net::new(interface, config, resources, seed);
+
+    spawner.spawn(net::net_task(runner).unwrap());
+    stack.wait_config_up().await;
+    info!("ip: {:?}", stack.config_v4());
 
     let rmt = Rmt::new(peripherals.RMT, RMT_FREQ)
         .expect("RMT init")
