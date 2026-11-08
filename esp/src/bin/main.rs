@@ -32,6 +32,7 @@ use soundwave_core::power::power_scale;
 use static_cell::StaticCell;
 
 mod net;
+mod udp;
 mod wifi;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -108,6 +109,8 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(net::net_task(runner).unwrap());
     stack.wait_config_up().await;
     info!("ip: {:?}", stack.config_v4());
+
+    spawner.spawn(udp::udp_task(stack).unwrap());
 
     let rmt = Rmt::new(peripherals.RMT, RMT_FREQ)
         .expect("RMT init")
