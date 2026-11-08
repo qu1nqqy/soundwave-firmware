@@ -30,6 +30,7 @@ use soundwave_core::effects::rainbow;
 use soundwave_core::power::power_scale;
 use static_cell::StaticCell;
 
+mod net;
 mod wifi;
 
 esp_bootloader_esp_idf::esp_app_desc!();
