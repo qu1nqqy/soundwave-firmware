@@ -77,8 +77,32 @@ jobs:
           name: soundwave-${{ github.sha }}
           path: dist/*
 
+  # Версия берётся из esp/Cargo.toml. Выпустить одну версию дважды нельзя: в PR в main
+  # (и перед самим релизом) проверяем, что релиза с таким тегом ещё нет.
+  version:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version is new
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' esp/Cargo.toml | head -1)
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Релиз $TAG уже выпущен — подними version в esp/Cargo.toml (и core/Cargo.toml)"
+            exit 1
+          fi
+          echo "Будет выпущен $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   release:
-    needs: [core, esp]
+    needs: [core, esp, version]
     # релизы только из main, пуши в dev и PR проходят лишь проверки
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -95,17 +119,17 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          gh release create "build-${SHORT_SHA}" dist/* \
+          gh release create "$TAG" dist/* \
             --target "$GITHUB_SHA" \
-            --title "build ${SHORT_SHA}" \
+            --title "soundwave-firmware $TAG" \
             --notes "Сборка коммита ${GITHUB_SHA}: $(git log -1 --pretty=%s)
 
           Прошивка: \`espflash write-bin 0x0 soundwave.bin\` (или \`espflash flash --monitor soundwave.elf\`)"
 
   notify:
-    needs: [core, esp, release]
+    needs: [core, esp, version, release]
     if: always()
     runs-on: ubuntu-latest
     env:
