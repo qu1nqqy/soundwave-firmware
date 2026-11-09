@@ -24,7 +24,7 @@ use esp_hal::rmt::Rmt;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal_smartled::{RmtSmartLeds, WS2812B_TIMING, buffer_size, color_order};
-use esp_radio::wifi::{AuthenticationMethodConfig, Interface, sta::StationConfig};
+use esp_radio::wifi::Interface;
 use log::info;
 use smart_leds::{RGB8, SmartLedsWriteAsync, brightness, gamma};
 use soundwave_core::effects::rainbow;
@@ -87,21 +87,7 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
-    // Wi-Fi. Контроллер — это «радио»: найти сеть и подключиться по SSID и паролю.
-    // Имя и пароль подставляются при сборке (`env!`) из esp/.cargo/wifi.toml — в git их нет.
-    // Подключением и переподключением дальше занимается wifi_task.
-    let mut controller = esp_radio::wifi::WifiController::new(peripherals.WIFI, Default::default())
-        .expect("wifi init");
-    let config = esp_radio::wifi::Config::Station(
-        StationConfig::default()
-            .with_ssid(env!("WIFI_SSID").try_into().expect("ssid"))
-            .with_authentication(AuthenticationMethodConfig::Wpa2Personal(
-                env!("WIFI_PASSWORD").try_into().expect("password"),
-            )),
-    );
-    controller.set_config(&config).expect("wifi config");
-
-    spawner.spawn(tasks::wifi::wifi_task(controller).unwrap());
+    tasks::wifi::start(spawner, peripherals.WIFI);
 
     // Сеть. Интерфейс — «сетевая карта», через которую идут сами пакеты;
     // station — плата клиент роутера (а не своя точка доступа). Создаётся ровно один раз.
