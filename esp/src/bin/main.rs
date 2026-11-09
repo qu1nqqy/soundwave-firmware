@@ -32,9 +32,7 @@ use soundwave_core::power::power_scale;
 use soundwave_core::protocol::Command;
 use static_cell::StaticCell;
 
-mod net;
-mod udp;
-mod wifi;
+mod tasks;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -103,7 +101,7 @@ async fn main(spawner: Spawner) -> ! {
     );
     controller.set_config(&config).expect("wifi config");
 
-    spawner.spawn(wifi::wifi_task(controller).unwrap());
+    spawner.spawn(tasks::wifi::wifi_task(controller).unwrap());
 
     // Сеть. Интерфейс — «сетевая карта», через которую идут сами пакеты;
     // station — плата клиент роутера (а не своя точка доступа). Создаётся ровно один раз.
@@ -117,12 +115,12 @@ async fn main(spawner: Spawner) -> ! {
     let (stack, runner) = embassy_net::new(interface, config, resources, seed);
 
     // runner запускаем ДО ожидания IP: DHCP делает именно он. В обратном порядке main ждал бы вечно.
-    spawner.spawn(net::net_task(runner).unwrap());
+    spawner.spawn(tasks::net::net_task(runner).unwrap());
     stack.wait_config_up().await;
     info!("ip: {:?}", stack.config_v4());
 
     // Приём пакетов — в своей задаче: recv_from ждёт сколько угодно и не должен тормозить ленту.
-    spawner.spawn(udp::udp_task(stack).unwrap());
+    spawner.spawn(tasks::udp::udp_task(stack).unwrap());
 
     let rmt = Rmt::new(peripherals.RMT, RMT_FREQ)
         .expect("RMT init")
@@ -160,7 +158,7 @@ async fn main(spawner: Spawner) -> ! {
         }
 
         // Заглядываем в ящик, не останавливая цикл: если пусто, try_take сразу вернёт None.
-        if let Some(Command::Fill(color)) = udp::COMMANDS.try_take() {
+        if let Some(Command::Fill(color)) = tasks::udp::COMMANDS.try_take() {
             fill = Some(color);
             last_packet_time = Instant::now();
         }
