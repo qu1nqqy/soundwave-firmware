@@ -1,5 +1,6 @@
 # Keep compilation settings in this file and user/runtime settings in `esp-config.toml`.
-include = ["esp-config.toml"]
+# wifi.toml — секреты Wi-Fi, не в git; создаётся из wifi.toml.example.
+include = ["esp-config.toml", "wifi.toml"]
 
 [target.xtensa-esp32-none-elf]
 runner = "espflash flash --monitor --chip esp32"
@@ -12,4 +13,4 @@ rustflags = [
 target = "xtensa-esp32-none-elf"
 
 [unstable]
-build-std = ["core"]
+build-std = ["alloc", "core"]

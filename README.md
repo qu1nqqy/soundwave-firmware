@@ -25,28 +25,49 @@ cargo install espup esp-generate espflash --locked
 espup install --targets esp32       # Rust-тулчейн для Xtensa (архитектура ESP32)
 ```
 
+## Wi-Fi
+
+Имя сети и пароль в репо не хранятся. Один раз создай локальный файл и впиши свою сеть:
+
+```sh
+cp esp/.cargo/wifi.toml.example esp/.cargo/wifi.toml
+```
+
+Без него сборка прошивки падает с `failed to load config include wifi.toml`.
+
 ## Работа
 
-Тесты (плата не нужна):
+Всё через `make` из корня репо. Окружение тулчейна (`~/export-esp.sh`) Makefile подгружает сам.
 
 ```sh
-cd core
-cargo test
+make            # список команд
+make test       # тесты core (плата не нужна)
+make build      # собрать прошивку
+make flash      # собрать, прошить, открыть монитор (выход: Ctrl+C)
+make monitor    # только монитор логов
+make fmt        # отформатировать код
+make check      # все проверки, как в CI
 ```
 
-Прошивка. В каждом новом терминале сначала подгрузи окружение тулчейна:
-
-```sh
-cd esp
-. ~/export-esp.sh
-cargo build --release     # просто собрать
-cargo run --release       # собрать, прошить, открыть монитор (выход: Ctrl+C)
-espflash monitor          # только монитор логов
-```
-
-`cargo run` сам вызывает `espflash flash --monitor` (см. `esp/.cargo/config.toml`) и сам находит порт.
+`make flash` вызывает `cargo run`, а тот — `espflash flash --monitor` (см. `esp/.cargo/config.toml`),
+порт находится сам. Если espup положил файл окружения в другое место: `make flash ESP_ENV=/путь/к/export-esp.sh`.
 
 > Прошивка затрёт WLED. Вернуть его можно в любой момент через веб-установщик install.wled.me.
+
+## CI/CD
+
+`.github/workflows/build.yml`:
+
+- **каждый пуш в `main`/`dev` и PR в `main`:** `make core-check` и `make esp-check` — те же команды, что и локально.
+- **пуш в `main`:** ещё и релиз `v<версия>` с файлами `soundwave.bin` и `soundwave.elf`.
+  Версия берётся из `esp/Cargo.toml`; если такой релиз уже есть, CI падает ещё в PR — нужно поднять версию.
+- **уведомление в Telegram** о результате, если в репо заданы секреты `TELEGRAM_TOKEN` и `TELEGRAM_TO`.
+
+Прошить готовый релиз без сборки:
+
+```sh
+espflash write-bin 0x0 soundwave.bin
+```
 
 ## Что где в `esp/`
 

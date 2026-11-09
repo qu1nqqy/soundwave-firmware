@@ -1,0 +1,153 @@
+name: build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ESPUP_VERSION: v0.17.1
+  ESPFLASH_VERSION: v4.6.0
+
+jobs:
+  # Логика без железа: обычный stable Rust, тесты гоняются прямо на раннере.
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # версия и компоненты берутся из core/rust-toolchain.toml
+      - name: Install toolchain
+        working-directory: core
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: Check
+        run: make core-check
+
+  # Прошивка: Xtensa-тулчейн от espup, сборка + готовый образ для прошивки.
+  esp:
+    runs-on: ubuntu-latest
+    env:
+      # espup ходит в GitHub API за релизами — с токеном не упрёмся в лимиты
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install espup and espflash
+        run: |
+          mkdir -p ~/.local/bin
+          curl -fsSL -o ~/.local/bin/espup \
+            "https://github.com/esp-rs/espup/releases/download/${ESPUP_VERSION}/espup-x86_64-unknown-linux-gnu"
+          chmod +x ~/.local/bin/espup
+          curl -fsSL -o espflash.zip \
+            "https://github.com/esp-rs/espflash/releases/download/${ESPFLASH_VERSION}/espflash-x86_64-unknown-linux-gnu.zip"
+          unzip -o espflash.zip -d ~/.local/bin && rm espflash.zip
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # создаёт ~/export-esp.sh, который Makefile подгружает сам
+      - name: Install Xtensa toolchain
+        run: espup install --targets esp32
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: esp
+
+      # настоящая сеть CI не нужна — хватает заглушки, чтобы собрался env!()
+      - name: Dummy Wi-Fi config
+        run: cp esp/.cargo/wifi.toml.example esp/.cargo/wifi.toml
+
+      - name: Check
+        run: make esp-check
+
+      # загрузчик + таблица разделов + приложение одним файлом, шьётся с адреса 0x0
+      - name: Collect images
+        run: make image
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soundwave-${{ github.sha }}
+          path: dist/*
+
+  # Версия берётся из esp/Cargo.toml. Выпустить одну версию дважды нельзя: в PR в main
+  # (и перед самим релизом) проверяем, что релиза с таким тегом ещё нет.
+  version:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version is new
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' esp/Cargo.toml | head -1)
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Релиз $TAG уже выпущен — подними version в esp/Cargo.toml (и core/Cargo.toml)"
+            exit 1
+          fi
+          echo "Будет выпущен $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [core, esp, version]
+    # релизы только из main, пуши в dev и PR проходят лишь проверки
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: soundwave-${{ github.sha }}
+          path: dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "soundwave-firmware $TAG" \
+            --notes "Сборка коммита ${GITHUB_SHA}: $(git log -1 --pretty=%s)
+
+          Прошивка: \`espflash write-bin 0x0 soundwave.bin\` (или \`espflash flash --monitor soundwave.elf\`)"
+
+  notify:
+    needs: [core, esp, version, release]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+    steps:
+      # без секретов (например, в форке) просто молчим, а не падаем
+      - name: Notify
+        if: env.TELEGRAM_TOKEN != '' && env.TELEGRAM_TO != ''
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: markdown
+          message: |
+            ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌ **Сборка упала**' || '✅ **Сборка прошла**' }}
+            Репозиторий: `${{ github.repository }}`
+            Ветка: `${{ github.ref_name }}`
+            Автор: `${{ github.actor }}`
+            core: `${{ needs.core.result }}` · esp: `${{ needs.esp.result }}` · release: `${{ needs.release.result }}`
+            🔗 [Workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})

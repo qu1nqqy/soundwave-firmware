@@ -24,3 +24,7 @@ target/
 
 # Ignore .DS_Store file in mac
 **/.DS_Store
+dist/
+
+# секреты Wi-Fi (шаблон — esp/.cargo/wifi.toml.example)
+esp/.cargo/wifi.toml
