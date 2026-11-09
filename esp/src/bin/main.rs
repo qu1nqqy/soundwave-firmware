@@ -19,6 +19,7 @@ use embassy_time::{Duration, Instant, Ticker};
 use esp_backtrace as _; // при панике печатает backtrace в консоль
 use esp_hal::Async;
 use esp_hal::clock::CpuClock;
+use esp_hal::peripherals::{GPIO18, RMT};
 use esp_hal::rmt::Rmt;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
@@ -60,6 +61,22 @@ type Strip =
 /// он живёт в статической памяти и создаётся один раз при старте.
 static STRIP: StaticCell<Strip> = StaticCell::new();
 
+/// Драйвер ленты на блоке RMT и пине данных, в статической памяти.
+#[allow(
+    clippy::large_stack_frames,
+    reason = "библиотека возвращает драйвер (~29 КБ) по значению, поэтому одна временная копия \
+    на стеке неизбежна; так было и раньше в main, стека при старте на это хватает"
+)]
+fn init_strip(rmt: RMT<'static>, pin: GPIO18<'static>) -> &'static mut Strip {
+    let rmt = Rmt::new(rmt, RMT_FREQ).expect("RMT init").into_async();
+    STRIP.init(
+        // memsize = 2: даём каналу 2 блока памяти RMT, чтобы ему было проще
+        // успевать подкачивать данные для длинной ленты.
+        Strip::new_with_memsize(WS2812B_TIMING, rmt.channel0, pin, 2, RMT_FREQ)
+            .expect("strip init"),
+    )
+}
+
 // --- Точка входа -------------------------------------------------------------
 
 #[allow(
@@ -85,22 +102,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let stack = tasks::net::start(spawner).await;
     tasks::udp::start(spawner, stack);
-
-    let rmt = Rmt::new(peripherals.RMT, RMT_FREQ)
-        .expect("RMT init")
-        .into_async();
-    let strip = STRIP.init(
-        // memsize = 2: даём каналу 2 блока памяти RMT, чтобы ему было проще
-        // успевать подкачивать данные для длинной ленты.
-        Strip::new_with_memsize(
-            WS2812B_TIMING,
-            rmt.channel0,
-            peripherals.GPIO18,
-            2,
-            RMT_FREQ,
-        )
-        .expect("strip init"),
-    );
+    let strip = init_strip(peripherals.RMT, peripherals.GPIO18);
 
     info!("soundwave: strip test, {NUM_LEDS} leds");
 
