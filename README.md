@@ -59,7 +59,8 @@ make check      # все проверки, как в CI
 `.github/workflows/build.yml`:
 
 - **каждый пуш в `main`/`dev` и PR в `main`:** `make core-check` и `make esp-check` — те же команды, что и локально.
-- **пуш в `main`:** ещё и релиз `build-<sha>` с файлами `soundwave.bin` и `soundwave.elf`.
+- **пуш в `main`:** ещё и релиз `v<версия>` с файлами `soundwave.bin` и `soundwave.elf`.
+  Версия берётся из `esp/Cargo.toml`; если такой релиз уже есть, CI падает ещё в PR — нужно поднять версию.
 - **уведомление в Telegram** о результате, если в репо заданы секреты `TELEGRAM_TOKEN` и `TELEGRAM_TO`.
 
 Прошить готовый релиз без сборки:
