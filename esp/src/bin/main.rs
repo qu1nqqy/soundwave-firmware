@@ -81,12 +81,17 @@ async fn main(spawner: Spawner) -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
+    // Куча: Wi-Fi-драйвер выделяет память динамически. `reclaimed` — память,
+    // которую освободил загрузчик после старта, так что она нам ничего не стоит.
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
 
     // Запускаем планировщик embassy на аппаратном таймере.
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
+    // Wi-Fi. Контроллер — это «радио»: найти сеть и подключиться по SSID и паролю.
+    // Имя и пароль подставляются при сборке (`env!`) из esp/.cargo/wifi.toml — в git их нет.
+    // Подключением и переподключением дальше занимается wifi_task.
     let mut controller = esp_radio::wifi::WifiController::new(peripherals.WIFI, Default::default())
         .expect("wifi init");
     let config = esp_radio::wifi::Config::Station(
@@ -100,17 +105,23 @@ async fn main(spawner: Spawner) -> ! {
 
     spawner.spawn(wifi::wifi_task(controller).unwrap());
 
+    // Сеть. Интерфейс — «сетевая карта», через которую идут сами пакеты;
+    // station — плата клиент роутера (а не своя точка доступа). Создаётся ровно один раз.
     let interface = Interface::station();
     let config = embassy_net::Config::dhcpv4(Default::default());
     let resources = RESOURCES.init(StackResources::new());
+    // Случайное число для сетевых номеров (порты, ID DHCP-запросов). Rng даёт u32 — склеиваем
+    // два в u64. Сначала расширяем до u64, потом сдвигаем: сдвиг u32 на 32 потерял бы все биты.
     let seed: u64 = u64::from(esp_hal::rng::Rng::new().random()) << 32
         | u64::from(esp_hal::rng::Rng::new().random());
     let (stack, runner) = embassy_net::new(interface, config, resources, seed);
 
+    // runner запускаем ДО ожидания IP: DHCP делает именно он. В обратном порядке main ждал бы вечно.
     spawner.spawn(net::net_task(runner).unwrap());
     stack.wait_config_up().await;
     info!("ip: {:?}", stack.config_v4());
 
+    // Приём пакетов — в своей задаче: recv_from ждёт сколько угодно и не должен тормозить ленту.
     spawner.spawn(udp::udp_task(stack).unwrap());
 
     let rmt = Rmt::new(peripherals.RMT, RMT_FREQ)
@@ -137,14 +148,18 @@ async fn main(spawner: Spawner) -> ! {
     let mut frames = 0u32;
     let mut last_report = Instant::now();
 
+    // Что показывать: Some(цвет) — заливка от мака, None — радуга.
+    // И когда пришёл последний пакет — чтобы вернуться к радуге, если мак замолчал.
     let mut fill: Option<RGB8> = None;
     let mut last_packet_time = Instant::now();
 
     loop {
+        // Мак молчит 5 секунд (пауза, выключили подсветку) — обратно к радуге.
         if last_packet_time.elapsed() > Duration::from_secs(5) {
             fill = None;
         }
 
+        // Заглядываем в ящик, не останавливая цикл: если пусто, try_take сразу вернёт None.
         if let Some(Command::Fill(color)) = udp::COMMANDS.try_take() {
             fill = Some(color);
             last_packet_time = Instant::now();
