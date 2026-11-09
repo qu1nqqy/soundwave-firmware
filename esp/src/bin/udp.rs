@@ -11,7 +11,7 @@ use embassy_net::{
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
-use log::{info, warn};
+use log::warn;
 use soundwave_core::protocol::{Command, parse};
 
 /// Почтовый ящик на одно сообщение: `udp_task` кладёт команду (`signal`), цикл ленты в `main`
@@ -56,9 +56,7 @@ pub async fn udp_task(netstack: Stack<'static>) {
                 Err(e) => warn!("bad packet from: {}: {:?}", from, e),
             },
             // Ошибка самого сокета — например, пакет не влез в buf.
-            Err(e) => {
-                info!("{:?}", e);
-            }
+            Err(e) => warn!("task: udp: receive error: {:?}", e),
         }
     }
 }

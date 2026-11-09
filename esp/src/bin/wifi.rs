@@ -2,7 +2,7 @@
 
 use embassy_time::{Duration, Timer};
 use esp_radio::wifi::WifiController;
-use log::info;
+use log::{info, warn};
 
 #[allow(
     clippy::large_stack_frames,
@@ -21,7 +21,7 @@ pub async fn wifi_task(mut controller: WifiController<'static>) {
                 let _ = controller.wait_for_disconnect_async().await;
             }
             Err(e) => {
-                info!("task: wifi: connect error: {:?}", e);
+                warn!("task: wifi: connect error: {:?}", e);
                 // Нет сети или неверный пароль — пауза, чтобы не долбить роутер, и снова.
                 Timer::after(Duration::from_secs(5)).await;
             }
