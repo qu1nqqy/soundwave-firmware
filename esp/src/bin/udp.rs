@@ -7,7 +7,12 @@ use embassy_net::{
     Stack,
     udp::{PacketMetadata, UdpSocket},
 };
-use log::info;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::signal::Signal;
+use log::{info, warn};
+use soundwave_core::protocol::{Command, parse};
+
+pub static COMMANDS: Signal<CriticalSectionRawMutex, Command> = Signal::new();
 
 #[embassy_executor::task]
 pub async fn udp_task(netstack: Stack<'static>) {
@@ -33,9 +38,10 @@ pub async fn udp_task(netstack: Stack<'static>) {
 
     loop {
         match socket.recv_from(&mut buf).await {
-            Ok((n, from)) => {
-                info!("{} bytes from {}: {:02x?}", n, from, &buf[..n])
-            }
+            Ok((n, from)) => match parse(&buf[..n]) {
+                Ok(cmd) => COMMANDS.signal(cmd),
+                Err(e) => warn!("bad packet from: {}: {:?}", from, e),
+            },
             Err(e) => {
                 info!("{:?}", e);
             }

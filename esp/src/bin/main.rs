@@ -29,6 +29,7 @@ use log::info;
 use smart_leds::{RGB8, SmartLedsWriteAsync, brightness, gamma};
 use soundwave_core::effects::rainbow;
 use soundwave_core::power::power_scale;
+use soundwave_core::protocol::Command;
 use static_cell::StaticCell;
 
 mod net;
@@ -136,11 +137,27 @@ async fn main(spawner: Spawner) -> ! {
     let mut frames = 0u32;
     let mut last_report = Instant::now();
 
+    let mut fill: Option<RGB8> = None;
+    let mut last_packet_time = Instant::now();
+
     loop {
-        // Анимация привязана ко времени, а не к номеру кадра: скорость одинакова при любом FPS.
-        // `as u8` специально обрезает число — оттенок «заворачивается» по кругу 0..=255.
-        let hue_shift = (Instant::now().as_millis() / 10) as u8;
-        rainbow(&mut frame, hue_shift);
+        if last_packet_time.elapsed() > Duration::from_secs(5) {
+            fill = None;
+        }
+
+        if let Some(Command::Fill(color)) = udp::COMMANDS.try_take() {
+            fill = Some(color);
+            last_packet_time = Instant::now();
+        }
+
+        if let Some(color) = fill {
+            frame.fill(color);
+        } else {
+            // Анимация привязана ко времени, а не к номеру кадра: скорость одинакова при любом FPS.
+            // `as u8` специально обрезает число — оттенок «заворачивается» по кругу 0..=255.
+            let hue_shift = (Instant::now().as_millis() / 10) as u8;
+            rainbow(&mut frame, hue_shift);
+        }
 
         // gamma: глаз воспринимает яркость нелинейно — корректируем, чтобы переходы были ровнее.
         let scale = power_scale(&frame, BRIGHTNESS, MAX_MILLIAMPS);
