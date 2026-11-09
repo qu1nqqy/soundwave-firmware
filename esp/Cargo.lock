@@ -1856,7 +1856,7 @@ dependencies = [
 
 [[package]]
 name = "soundwave"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "critical-section",
  "embassy-executor",
@@ -1879,7 +1879,7 @@ dependencies = [
 
 [[package]]
 name = "soundwave-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "smart-leds",
 ]

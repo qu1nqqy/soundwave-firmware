@@ -2,7 +2,7 @@
 edition      = "2024"
 name         = "soundwave"
 rust-version = "1.95"
-version      = "0.1.0"
+version      = "0.0.1"
 autobins = false
 
 [[bin]]
@@ -36,7 +36,7 @@ critical-section = "1.2.0"
 static_cell      = "2.1.1"
 esp-hal-smartled = { version = "0.18", features = ["esp32"] }
 smart-leds = "0.4"
-soundwave-core = { version = "0.1.0", path = "../core" }
+soundwave-core = { path = "../core" }
 
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
