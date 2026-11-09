@@ -84,9 +84,7 @@ async fn main(spawner: Spawner) -> ! {
     tasks::wifi::start(spawner, peripherals.WIFI);
 
     let stack = tasks::net::start(spawner).await;
-
-    // Приём пакетов — в своей задаче: recv_from ждёт сколько угодно и не должен тормозить ленту.
-    spawner.spawn(tasks::udp::udp_task(stack).unwrap());
+    tasks::udp::start(spawner, stack);
 
     let rmt = Rmt::new(peripherals.RMT, RMT_FREQ)
         .expect("RMT init")

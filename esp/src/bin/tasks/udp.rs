@@ -5,6 +5,7 @@
     reason = "состояние embassy-задачи (вместе с буферами сокета) живёт в статической памяти пула задач, а не на стеке"
 )]
 
+use embassy_executor::Spawner;
 use embassy_net::{
     Stack,
     udp::{PacketMetadata, UdpSocket},
@@ -19,6 +20,12 @@ use soundwave_core::protocol::{Command, parse};
 /// `CriticalSectionRawMutex`: на миг «положить/забрать» отключаются прерывания, поэтому ящик
 /// безопасен и между задачами, и между двумя ядрами.
 pub static COMMANDS: Signal<CriticalSectionRawMutex, Command> = Signal::new();
+
+/// Запускает приём пакетов. Отдельной задачей — потому что recv_from ждёт сколько угодно
+/// и не должен тормозить ленту.
+pub fn start(spawner: Spawner, stack: Stack<'static>) {
+    spawner.spawn(udp_task(stack).unwrap());
+}
 
 #[embassy_executor::task]
 pub async fn udp_task(netstack: Stack<'static>) {
