@@ -9,16 +9,60 @@ on:
 
 permissions:
   contents: read
+  actions: read # tg-notify читает статус шагов
 
 env:
   ESPUP_VERSION: v0.17.1
   ESPFLASH_VERSION: v4.6.0
 
 jobs:
+  # Первая задача: создаёт сообщение в Telegram (остальные дописывают в него свои секции)
+  # и проверяет версию из esp/Cargo.toml. Выпустить одну версию дважды нельзя, поэтому в PR
+  # в main и перед самим релизом проверяем, что релиза с таким тегом ещё нет.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      tg_message_id: ${{ steps.tg.outputs.message_id }}
+    steps:
+      # первым шагом: без секретов (например, в форке) только предупредит, сборку не уронит
+      - id: tg
+        uses: qu1nqqy/tg-notify@v1
+        with:
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          topic_id: ${{ vars.TELEGRAM_TOPIC_ID }}
+
+      - uses: actions/checkout@v4
+
+      - name: Version is new
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # в dev версию не поднимаем на каждый пуш — там только показываем её
+          STRICT: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+        run: |
+          VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' esp/Cargo.toml | head -1)
+          TAG="v${VERSION}"
+          if [ "$STRICT" = true ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Релиз $TAG уже выпущен — подними version в esp/Cargo.toml (и core/Cargo.toml)"
+            exit 1
+          fi
+          echo "Версия $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   # Логика без железа: обычный stable Rust, тесты гоняются прямо на раннере.
   core:
+    needs: version
     runs-on: ubuntu-latest
     steps:
+      - uses: qu1nqqy/tg-notify@v1
+        with:
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          topic_id: ${{ vars.TELEGRAM_TOPIC_ID }}
+          message_id: ${{ needs.version.outputs.tg_message_id }}
+
       - uses: actions/checkout@v4
 
       # версия и компоненты берутся из core/rust-toolchain.toml
@@ -35,11 +79,19 @@ jobs:
 
   # Прошивка: Xtensa-тулчейн от espup, сборка + готовый образ для прошивки.
   esp:
+    needs: version
     runs-on: ubuntu-latest
     env:
       # espup ходит в GitHub API за релизами — с токеном не упрёмся в лимиты
       GITHUB_TOKEN: ${{ github.token }}
     steps:
+      - uses: qu1nqqy/tg-notify@v1
+        with:
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          topic_id: ${{ vars.TELEGRAM_TOPIC_ID }}
+          message_id: ${{ needs.version.outputs.tg_message_id }}
+
       - uses: actions/checkout@v4
 
       - name: Install espup and espflash
@@ -77,38 +129,22 @@ jobs:
           name: soundwave-${{ github.sha }}
           path: dist/*
 
-  # Версия берётся из esp/Cargo.toml. Выпустить одну версию дважды нельзя: в PR в main
-  # (и перед самим релизом) проверяем, что релиза с таким тегом ещё нет.
-  version:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Version is new
-        id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' esp/Cargo.toml | head -1)
-          TAG="v${VERSION}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::Релиз $TAG уже выпущен — подними version в esp/Cargo.toml (и core/Cargo.toml)"
-            exit 1
-          fi
-          echo "Будет выпущен $TAG"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
   release:
     needs: [core, esp, version]
     # релизы только из main, пуши в dev и PR проходят лишь проверки
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # gh release create
+      actions: read # свой блок permissions заменяет общий целиком
     steps:
+      - uses: qu1nqqy/tg-notify@v1
+        with:
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          topic_id: ${{ vars.TELEGRAM_TOPIC_ID }}
+          message_id: ${{ needs.version.outputs.tg_message_id }}
+
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
@@ -128,26 +164,12 @@ jobs:
 
           Прошивка: \`espflash write-bin 0x0 soundwave.bin\` (или \`espflash flash --monitor soundwave.elf\`)"
 
-  notify:
-    needs: [core, esp, version, release]
-    if: always()
-    runs-on: ubuntu-latest
-    env:
-      TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
-      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-    steps:
-      # без секретов (например, в форке) просто молчим, а не падаем
-      - name: Notify
-        if: env.TELEGRAM_TOKEN != '' && env.TELEGRAM_TO != ''
-        uses: appleboy/telegram-action@master
+      # отдельное закреплённое сообщение о релизе с файлами прошивки
+      - uses: qu1nqqy/tg-notify@v1
         with:
-          to: ${{ secrets.TELEGRAM_TO }}
+          mode: release
           token: ${{ secrets.TELEGRAM_TOKEN }}
-          format: markdown
-          message: |
-            ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌ **Сборка упала**' || '✅ **Сборка прошла**' }}
-            Репозиторий: `${{ github.repository }}`
-            Ветка: `${{ github.ref_name }}`
-            Автор: `${{ github.actor }}`
-            core: `${{ needs.core.result }}` · esp: `${{ needs.esp.result }}` · release: `${{ needs.release.result }}`
-            🔗 [Workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          topic_id: ${{ vars.TELEGRAM_TOPIC_ID }}
+          tag: ${{ needs.version.outputs.tag }}
+          files: dist/*
